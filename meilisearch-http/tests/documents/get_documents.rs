@@ -1,4 +1,5 @@
 use crate::common::GetAllDocumentsOptions;
+use crate::common::GetDocumentOptions;
 use crate::common::Server;
 
 use serde_json::json;
@@ -253,6 +254,101 @@ async fn test_get_all_documents_attributes_to_retrieve() {
     for results in response["results"].as_array().unwrap() {
         assert_eq!(results.as_object().unwrap().keys().count(), 16);
     }
+}
+
+#[actix_rt::test]
+async fn get_document_s_nested_attributes_to_retrieve() {
+    let server = Server::new().await;
+    let index = server.index("test");
+    index.create(None).await;
+    let documents = json!([
+        {
+            "id": 0,
+            "content.truc": "foobar",
+        },
+        {
+            "id": 1,
+            "content": {
+                "truc": "foobar",
+                "machin": "bidule",
+            },
+        },
+    ]);
+    let (_, code) = index.add_documents(documents, None).await;
+    assert_eq!(code, 202);
+    index.wait_task(0).await;
+
+    let (response, code) = index
+        .get_document(
+            0,
+            Some(GetDocumentOptions {
+                attributes_to_retrieve: Some(vec!["content"]),
+            }),
+        )
+        .await;
+    assert_eq!(code, 200);
+    assert_eq!(
+        response,
+        json!({
+            "id": 0,
+            "content.truc": "foobar",
+        })
+    );
+    let (response, code) = index
+        .get_document(
+            1,
+            Some(GetDocumentOptions {
+                attributes_to_retrieve: Some(vec!["content"]),
+            }),
+        )
+        .await;
+    assert_eq!(code, 200);
+    assert_eq!(
+        response,
+        json!({
+            "id": 1,
+            "content": {
+                "truc": "foobar",
+                "machin": "bidule",
+            },
+        })
+    );
+
+    let (response, code) = index
+        .get_document(
+            0,
+            Some(GetDocumentOptions {
+                attributes_to_retrieve: Some(vec!["content.truc"]),
+            }),
+        )
+        .await;
+    assert_eq!(code, 200);
+    assert_eq!(
+        response,
+        json!({
+            "id": 0,
+            "content.truc": "foobar",
+        })
+    );
+    let (response, code) = index
+        .get_document(
+            1,
+            Some(GetDocumentOptions {
+                attributes_to_retrieve: Some(vec!["content.truc"]),
+            }),
+        )
+        .await;
+    assert_eq!(code, 200);
+    assert_eq!(
+        response,
+        json!({
+            "id": 1,
+            "content": {
+                "truc": "foobar",
+                "machin": "bidule",
+            },
+        })
+    );
 }
 
 #[actix_rt::test]
