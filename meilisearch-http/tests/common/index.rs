@@ -151,10 +151,7 @@ impl Index<'_> {
         }
 
         if let Some(attributes_to_retrieve) = options.attributes_to_retrieve {
-            url.push_str(&format!(
-                "attributesToRetrieve={}&",
-                attributes_to_retrieve.join(",")
-            ));
+            url.push_str(&format!("fields={}&", attributes_to_retrieve.join(",")));
         }
 
         self.service.get(url).await

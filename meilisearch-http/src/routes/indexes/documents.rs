@@ -13,7 +13,7 @@ use meilisearch_lib::MeiliSearch;
 use mime::Mime;
 use once_cell::sync::Lazy;
 use serde::Deserialize;
-use serde_json::Value;
+use serde_json::{json, Value};
 use tokio::sync::mpsc;
 
 use crate::analytics::Analytics;
@@ -22,9 +22,6 @@ use crate::extractors::authentication::{policies::*, GuardedData};
 use crate::extractors::payload::Payload;
 use crate::extractors::sequential_extractor::SeqHandler;
 use crate::task::SummarizedTaskView;
-
-const DEFAULT_RETRIEVE_DOCUMENTS_OFFSET: usize = 0;
-const DEFAULT_RETRIEVE_DOCUMENTS_LIMIT: usize = 20;
 
 static ACCEPTED_CONTENT_TYPE: Lazy<Vec<String>> = Lazy::new(|| {
     vec![
@@ -113,12 +110,16 @@ pub async fn delete_document(
     Ok(HttpResponse::Accepted().json(task))
 }
 
+const PAGINATION_DEFAULT_LIMIT: fn() -> usize = || 20;
+
 #[derive(Deserialize, Debug)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct BrowseQuery {
-    offset: Option<usize>,
-    limit: Option<usize>,
-    attributes_to_retrieve: Option<String>,
+    #[serde(default)]
+    offset: usize,
+    #[serde(default = "PAGINATION_DEFAULT_LIMIT")]
+    limit: usize,
+    fields: Option<String>,
 }
 
 pub async fn get_all_documents(
@@ -127,7 +128,7 @@ pub async fn get_all_documents(
     params: web::Query<BrowseQuery>,
 ) -> Result<HttpResponse, ResponseError> {
     debug!("called with params: {:?}", params);
-    let attributes_to_retrieve = params.attributes_to_retrieve.as_ref().and_then(|attrs| {
+    let attributes_to_retrieve = params.fields.as_ref().and_then(|attrs| {
         let mut names = Vec::new();
         for name in attrs.split(',').map(String::from) {
             if name == "*" {
@@ -138,16 +139,18 @@ pub async fn get_all_documents(
         Some(names)
     });
 
-    let documents = meilisearch
+    let (total, documents) = meilisearch
         .documents(
             path.into_inner(),
-            params.offset.unwrap_or(DEFAULT_RETRIEVE_DOCUMENTS_OFFSET),
-            params.limit.unwrap_or(DEFAULT_RETRIEVE_DOCUMENTS_LIMIT),
+            params.offset,
+            params.limit,
             attributes_to_retrieve,
         )
         .await?;
     debug!("returns: {:?}", documents);
-    Ok(HttpResponse::Ok().json(documents))
+    Ok(HttpResponse::Ok().json(json!(
+        { "limit": params.limit, "offset": params.offset, "total": total, "results": documents }
+    )))
 }
 
 #[derive(Deserialize, Debug)]
